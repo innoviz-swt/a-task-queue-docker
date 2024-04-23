@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+
+  postgres:
+    image: postgres:16.1
+    volumes:
+      - postgres:/var/lib/postgresql/data:Z
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    restart: unless-stopped
+
+  ataskq-server:
+    image: innovizswt/ataskq-server:0.5.1
+    ports:
+      - 8080:8080
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      ATASKQ_SERVER_CONNECTION: pg://postgres:postgres@postgres:5432/postgres
+      ATASKQ_SERVER_WORKERS: 1 # todo add support to > 1 failing on db init
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  jupyter-lab:
+    # https://github.com/jupyter/docker-stacks
+    image: jupyter/minimal-notebook
+    ports:
+      - 8888:8888
+    depends_on:
+      - ataskq-server
+    volumes:
+      - ./notebook:/home/jovyan/examples
+    restart: unless-stopped
+
+volumes:
+  postgres:
