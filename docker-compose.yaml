@@ -1,29 +1,54 @@
 version: '3.8'
 
 services:
+  server:
+    image: innovizswt/ataskq:${ATASKQ_VERSION}
+    ports:
+      - 8080:8080
+    environment:
+      ATASKQ_SERVER_WORKERS: 4
+      ATASKQ_CONFIG: "server"
+      ataskq.connection: pg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres
+    command: ["sh", "run_server"]
+    depends_on:
+      - background
+    restart: unless-stopped
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER} -d postgres
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  background:
+    image: innovizswt/ataskq:${ATASKQ_VERSION}
+    environment:
+      ATASKQ_CONFIG: "server"
+      ataskq.connection: pg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres
+    command: ["sh", "run_background"]
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  runner:
+    image: innovizswt/ataskq:${ATASKQ_VERSION}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}      
+      ATASKQ_CONFIG: "client"
+    command: ["sh", "run_runner"]
+    depends_on:
+      - postgres
+    restart: unless-stopped
 
   postgres:
     image: postgres:16.1
-    volumes:
-      - postgres:/var/lib/postgresql/data:Z
+    # volumes:
+    #   - postgres:/var/lib/postgresql/data:Z
     ports:
       - 5432:5432
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
-    restart: unless-stopped
-
-  ataskq-server:
-    image: innovizswt/ataskq-server:0.5.1
-    ports:
-      - 8080:8080
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
-      ATASKQ_SERVER_CONNECTION: pg://postgres:postgres@postgres:5432/postgres
-      ATASKQ_SERVER_WORKERS: 1 # todo add support to > 1 failing on db init
-    depends_on:
-      - postgres
     restart: unless-stopped
 
   jupyter-lab:
@@ -32,7 +57,7 @@ services:
     ports:
       - 8888:8888
     depends_on:
-      - ataskq-server
+      - server
     volumes:
       - ./notebook:/home/jovyan/examples
     restart: unless-stopped
