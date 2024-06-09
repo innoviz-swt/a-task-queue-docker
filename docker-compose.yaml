@@ -1,41 +1,50 @@
-version: '3.8'
-
 services:
-  server:
+  atq-server:
     image: innovizswt/ataskq:${ATASKQ_VERSION}
     ports:
       - 8080:8080
     environment:
       ATASKQ_SERVER_WORKERS: 4
       ATASKQ_CONFIG: "server"
-      ataskq.connection: pg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres
-    command: ["sh", "run_server"]
+      ataskq.connection: pg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres      
+    command: ["sh", "./run_server"]
     depends_on:
-      - background
+      - atq-background
     restart: unless-stopped
     healthcheck:
-      test: pg_isready -U ${POSTGRES_USER} -d postgres
+      test: [ "CMD", "curl",  "--fail" , "http://atq-server:8080/health"]
       interval: 10s
-      timeout: 3s
-      retries: 3
+      timeout: 5s
+      retries: 5
 
-  background:
+  atq-background:
     image: innovizswt/ataskq:${ATASKQ_VERSION}
+    ports:
+      - 8081:8081
     environment:
       ATASKQ_CONFIG: "server"
       ataskq.connection: pg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres
-    command: ["sh", "run_background"]
+      ataskq.pulse_interval: 15      
+    command: ["sh", "./run_background"]
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl",  "--fail" , "http://atq-background:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
-  runner:
+  atq-runner:
     image: innovizswt/ataskq:${ATASKQ_VERSION}
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}      
+      DATAPATH: /data
       ATASKQ_CONFIG: "client"
-    command: ["sh", "run_runner"]
+      ataskq.connection: pg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres
+    volumes:
+      - ./data:/data
+    command: ["sh", "./run_runner"]
     depends_on:
       - postgres
     restart: unless-stopped
@@ -50,17 +59,27 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   jupyter-lab:
     # https://github.com/jupyter/docker-stacks
     image: jupyter/minimal-notebook
     ports:
       - 8888:8888
+    environment:
+      DATAPATH: /data
+      ataskq.connection: http://atq-server:8080
     depends_on:
-      - server
+      - atq-server
     volumes:
       - ./notebook:/home/jovyan/examples
+      - ./data:/data
+      - ./data:/home/jovyan/examples/data # see tasks output from activity
     restart: unless-stopped
 
-volumes:
-  postgres:
+# volumes:
+#   postgres:
